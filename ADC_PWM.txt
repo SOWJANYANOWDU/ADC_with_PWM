@@ -131,5 +131,5 @@ void lcd_data(unsigned char i)
     PORTD = i;
     PORTB |= 0x01;      // EN = 1
     PORTB &= ~0x01;     // EN = 0
-    __delay_ms(100);
+    __deelay_ms(100);
 }
