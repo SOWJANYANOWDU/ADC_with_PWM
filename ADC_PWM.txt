@@ -1,0 +1,135 @@
+// PIC16F877A Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG
+#pragma config FOSC = EXTRC     // Oscillator Selection bits (RC oscillator)
+#pragma config WDTE = OFF       // Watchdog Timer Enable bit (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable bit (PWRT disabled)
+#pragma config BOREN = OFF      // Brown-out Reset Enable bit (BOR disabled)
+#pragma config LVP = OFF        // Low-Voltage ICSP Enable bit (RB3 is digital I/O)
+#pragma config CPD = OFF        // Data EEPROM Memory Code Protection bit (off)
+#pragma config WRT = OFF        // Flash Program Memory Write Enable bits (off)
+#pragma config CP = OFF         // Flash Program Memory Code Protection bit (off)
+
+// Include
+#include <xc.h>
+#define _XTAL_FREQ 6000000
+
+// Function declarations
+void adc_lcd_init(void);
+void lcd_num_convert(unsigned int i);
+void lcd_command(unsigned char i);
+void lcd_data(unsigned char i);
+
+// Global variables
+unsigned int adc_high, adc_low, calibrated_value;
+unsigned long adc_volt;
+
+void main()
+{
+    adc_lcd_init();
+    while (1)
+    {
+        ADCON0 |= 0x04;  // Start conversion
+        while (ADCON0 & 0x04); // Wait for conversion to complete
+
+        adc_high = ADRESH;
+        adc_low = ADRESL;
+        adc_volt = ((adc_high << 8) | adc_low);
+
+        calibrated_value = (adc_volt * 338) / 1023;
+
+        // Set PWM duty cycle
+        CCPR1L = (calibrated_value >> 2);
+        CCP1CON = ((CCP1CON & 0xCF) | ((calibrated_value & 0x03) << 4));
+
+        // Display on LCD
+        lcd_num_convert(calibrated_value);
+    }
+}
+
+void adc_lcd_init()
+{
+    TRISB = 0x00;
+    TRISD = 0x00;
+    PORTB = 0x00;
+    PORTD = 0x00;
+
+    TRISC = 0xFB;       // RC2 (PWM output) as output
+    CCP1CON = 0x0C;     // PWM mode
+    T2CON = 0x06;       // Timer2 with prescaler 16
+    PR2 = 0x5E;         // PWM Period
+
+    // LCD Initialization
+    lcd_command(0x30);
+    __delay_ms(100);
+    lcd_command(0x30);
+    __delay_ms(100);
+    lcd_command(0x30);
+    __delay_ms(100);
+    lcd_command(0x38);  // Function Set
+    __delay_ms(100);
+    lcd_command(0x06);  // Entry Mode
+    __delay_ms(100);
+    lcd_command(0x0C);  // Display ON, Cursor OFF
+    __delay_ms(100);
+    lcd_command(0x01);  // Clear display
+    __delay_ms(100);
+
+    // ADC Initialization
+    TRISA = 0x01;       // RA0 as input (analog)
+    ADCON1 = 0x8E;      // Configure analog inputs
+    ADCON0 = 0x81;      // ADC ON, channel 0
+    __delay_ms(10);
+}
+
+// Modified function to display value like "__0", "045", "338"
+void lcd_num_convert(unsigned int i)
+{
+    unsigned char digit[3];  // For hundreds, tens, units
+
+    digit[0] = i / 100;           // Hundreds
+    digit[1] = (i / 10) % 10;     // Tens
+    digit[2] = i % 10;            // Units
+
+    // Display hundreds place
+    lcd_command(0x80);
+    if (digit[0] == 0)
+        lcd_data(' ');
+    else
+        lcd_data('0' + digit[0]);
+
+    // Display tens place
+    lcd_command(0x81);
+    if (digit[0] == 0 && digit[1] == 0)
+        lcd_data(' ');
+    else
+        lcd_data('0' + digit[1]);
+
+    // Display units place
+    lcd_command(0x82);
+    lcd_data('0' + digit[2]);
+
+    // Display unit symbol
+    lcd_command(0x83);
+    lcd_data('V');  // V for volts
+}
+
+void lcd_command(unsigned char i)
+{
+    PORTB &= ~0x08;     // RS = 0 (command mode)
+    PORTD = i;
+    PORTB |= 0x01;      // EN = 1
+    PORTB &= ~0x01;     // EN = 0
+    __delay_ms(100);
+}
+
+void lcd_data(unsigned char i)
+{
+    PORTB |= 0x08;      // RS = 1 (data mode)
+    PORTD = i;
+    PORTB |= 0x01;      // EN = 1
+    PORTB &= ~0x01;     // EN = 0
+    __delay_ms(100);
+}
